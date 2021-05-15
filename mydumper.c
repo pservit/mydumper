@@ -3526,7 +3526,7 @@ void save_checksum(gchar *fcfile, GChecksum *checksum)
 
   gchar *csfilename = g_strdup_printf("%s.sum", fcfile);
 
-  FILE *csfile = my_open(csfilename);
+  FILE *csfile = g_fopen(csfilename, "w");
 
   gchar   *cdigest = g_checksum_get_string(checksum);
   GString *digest  = g_string_new(cdigest);
@@ -3534,8 +3534,8 @@ void save_checksum(gchar *fcfile, GChecksum *checksum)
   write(fileno(csfile), digest->str, digest->len);
   write(fileno(csfile), "\n", 1);
 
-  my_close_file(csfile, csfilename);
-
+  fclose((FILE *)csfile);
+  
   g_checksum_reset(checksum);
 
   g_free(csfilename);
@@ -3581,6 +3581,8 @@ guint64 dump_table_data(MYSQL *conn, FILE *file, char *database, char *table,
 
   GString *select_fields;
 
+  GChecksum *checksum = g_checksum_new(G_CHECKSUM_SHA512);
+
   if (has_generated_fields) {
     select_fields = get_insertable_fields(conn, database, table);
   } else {
@@ -3614,8 +3616,6 @@ guint64 dump_table_data(MYSQL *conn, FILE *file, char *database, char *table,
   MYSQL_ROW row;
 
   g_string_set_size(statement, 0);
-
-  GChecksum *checksum = g_checksum_new(G_CHECKSUM_SHA512);
 
   /* Poor man's data dump code */
   while ((row = mysql_fetch_row(result))) {
