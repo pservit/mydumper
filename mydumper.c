@@ -286,6 +286,7 @@ guint64 estimate_count(MYSQL *conn, char *database, char *table, char *field,
 void dump_table_data_file(MYSQL *conn, struct table_job * tj);
 void create_backup_dir(char *directory);
 gboolean write_data(FILE *, GString *);
+gboolean write_data_cs(FILE *,GString*,GChecksum*);
 gboolean check_regex(char *database, char *table);
 gboolean check_skiplist(char *database, char *table);
 int tables_skiplist_cmp(gconstpointer a, gconstpointer b, gpointer user_data);
@@ -3519,6 +3520,33 @@ void dump_tables(MYSQL *conn, GList *noninnodb_tables_list,
   g_async_queue_push(conf->queue_less_locking, j);
 }
 
+void save_checksum(gchar *fcfile, GChecksum *checksum)
+{
+  if(checksum == NULL) return;
+
+  gchar *csfilename = g_strdup_printf("%s.sum", fcfile);
+
+  FILE *csfile = my_open(csfilename);
+
+  gchar   *cdigest = g_checksum_get_string(checksum);
+  GString *digest  = g_string_new(cdigest);
+
+  write(fileno(csfile), digest->str, digest->len);
+  write(fileno(csfile), "\n", 1);
+
+  my_close_file(csfile, csfilename);
+
+  g_checksum_reset(checksum);
+
+  g_free(csfilename);
+  g_string_free(digest, TRUE);
+  /*
+  g_free(cdigest);
+  */
+
+  return;
+}
+
 /* Do actual data chunk reading/writing magic */
 guint64 dump_table_data(MYSQL *conn, FILE *file, char *database, char *table,
                         char *where, char *order_by, char *filename) {
@@ -3587,6 +3615,8 @@ guint64 dump_table_data(MYSQL *conn, FILE *file, char *database, char *table,
 
   g_string_set_size(statement, 0);
 
+  GChecksum *checksum = g_checksum_new(G_CHECKSUM_SHA512);
+
   /* Poor man's data dump code */
   while ((row = mysql_fetch_row(result))) {
     gulong *lengths = mysql_fetch_lengths(result);
@@ -3608,7 +3638,7 @@ guint64 dump_table_data(MYSQL *conn, FILE *file, char *database, char *table,
           g_string_printf(statement, "SET FOREIGN_KEY_CHECKS=0;\n");
         }
 
-        if (!write_data(file, statement)) {
+        if (!write_data_cs(file,statement,checksum)) {
           g_critical("Could not write out data for %s.%s", database, table);
           goto cleanup;
         }
@@ -3677,7 +3707,7 @@ guint64 dump_table_data(MYSQL *conn, FILE *file, char *database, char *table,
           }
           g_string_append(statement, ";\n");
 
-          if (!write_data(file, statement)) {
+          if (!write_data_cs(file,statement,checksum)) {
             g_critical("Could not write out data for %s.%s", database, table);
             goto cleanup;
           } else {
@@ -3687,6 +3717,7 @@ guint64 dump_table_data(MYSQL *conn, FILE *file, char *database, char *table,
                     chunk_filesize) {
               fn++;
               g_free(fcfile);
+              save_checksum(fcfile, checksum);
               fcfile = g_strdup_printf("%s.%05d.sql%s", filename_prefix, fn,
                                        (compress_output ? ".gz" : ""));
               if (!compress_output) {
@@ -3748,7 +3779,7 @@ guint64 dump_table_data(MYSQL *conn, FILE *file, char *database, char *table,
 
   if (statement->len > 0) {
     g_string_append(statement, ";\n");
-    if (!write_data(file, statement)) {
+    if (!write_data_cs(file,statement,checksum)) {
       g_critical(
           "Could not write out closing newline for %s.%s, now this is sad!",
           database, table);
@@ -3776,6 +3807,9 @@ cleanup:
     }
   }
 
+  save_checksum(fcfile, checksum);
+  if(checksum) g_checksum_free(checksum);
+
   if (!st_in_file && !build_empty_files) {
     // dropping the useless file
     if (remove(fcfile)) {
@@ -3794,7 +3828,7 @@ cleanup:
   return num_rows;
 }
 
-gboolean write_data(FILE *file, GString *data) {
+gboolean write_data_cs(FILE* file,GString * data, GChecksum *checksum) {
   size_t written = 0;
   ssize_t r = 0;
 
@@ -3809,8 +3843,17 @@ gboolean write_data(FILE *file, GString *data) {
       errors++;
       return FALSE;
     }
+
+    if(checksum) {
+      g_checksum_update(checksum, (guchar *)(data->str + written), r);
+    }
+
     written += r;
   }
 
   return TRUE;
+}
+
+gboolean write_data(FILE* file,GString * data) {
+  return write_data_cs(file, data, NULL);
 }
