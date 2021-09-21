@@ -3531,8 +3531,14 @@ void save_checksum(gchar *fcfile, GChecksum *checksum)
   const gchar   *cdigest = g_checksum_get_string(checksum);
   GString *digest  = g_string_new(cdigest);
 
-  write(fileno(csfile), digest->str, digest->len);
-  write(fileno(csfile), "\n", 1);
+  int rc = 0;
+  rc = write(fileno(csfile), digest->str, digest->len);
+  rc = write(fileno(csfile), "\n", 1);
+  if (rc <= 0) {
+    g_critical("Couldn't write data to a file: %s", strerror(errno));
+    // return;
+  }
+
 
   fclose((FILE *)csfile);
   
