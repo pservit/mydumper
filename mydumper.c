@@ -84,6 +84,7 @@ int skip_tz = 0;
 int need_dummy_read = 0;
 int need_dummy_toku_read = 0;
 int compress_output = 0;
+gchar *pipe_cmd= NULL;
 int killqueries = 0;
 int detected_server = 0;
 int lock_all_tables = 0;
@@ -182,6 +183,8 @@ static GOptionEntry entries[] = {
      "Limit the amounto of rows per block after the table is estimated, default 1000000", NULL},
     {"compress", 'c', 0, G_OPTION_ARG_NONE, &compress_output,
      "Compress output files", NULL},
+    { "pipe-cmd", 'p', 0, G_OPTION_ARG_STRING, &pipe_cmd, 
+     "Pipe output. Ex: --pipe-cmd=\"pigz --no-name --no-time --rsyncable --stdout >\%s\"", NULL},
     {"build-empty-files", 'e', 0, G_OPTION_ARG_NONE, &build_empty_files,
      "Build dump files even if no data available from table", NULL},
     {"regex", 'x', 0, G_OPTION_ARG_STRING, &regexstring,
@@ -491,6 +494,50 @@ void read_tables_skiplist(const gchar *filename) {
             g_sequence_get_length(tables_skiplist));
   return;
 }
+
+
+
+FILE* my_open_file(char *filename) {
+	FILE *outfile = NULL;
+
+	gchar *fcfile = g_strdup_printf("%s.tmp", filename);
+
+	if (compress_output) {
+		outfile= (void*) gzopen(fcfile, "w");
+	} else if (pipe_cmd) {
+		gchar *cmd = g_strdup_printf(pipe_cmd, fcfile);
+		outfile= popen(cmd, "w");
+		g_free(cmd);
+	} else {
+		outfile= g_fopen(fcfile, "w");
+	}
+	
+	g_free(fcfile);
+
+	return outfile;
+}
+
+void my_close_file(FILE *old_file, char *filename) {
+
+	gchar *fcfile = g_strdup_printf("%s.tmp", filename);
+
+	if (compress_output) {
+		if(old_file != NULL) gzclose((gzFile)old_file);
+	} else if (pipe_cmd) {
+		if(old_file != NULL) {
+			int rc = pclose(old_file);
+			g_message("pclose(): rc=%d", rc);
+		}
+	} else {
+		if(old_file != NULL) fclose(old_file);
+	}
+	
+	g_rename(fcfile, filename);
+	g_free(fcfile);
+
+	return;
+}
+
 
 /* Write some stuff we know about snapshot, before it changes */
 void write_snapshot_info(MYSQL *conn, FILE *file) {
@@ -1150,13 +1197,13 @@ int main(int argc, char *argv[]) {
 
   g_option_context_free(context);
 
-  if (!compress_output) {
-    m_open=&g_fopen;
-    m_close=(void *) &fclose;
-  } else {
-    m_open=(void *) &gzopen;
-    m_close=(void *) &gzclose;
-  }
+  // if (!compress_output) {
+  //   m_open=&g_fopen;
+  //   m_close=(void *) &fclose;
+  // } else {
+  //   m_open=(void *) &gzopen;
+  //   m_close=(void *) &gzclose;
+  // }
 
   if (password != NULL){
     int i=1;	  
@@ -2103,7 +2150,7 @@ void dump_create_database_data(MYSQL *conn, char *database, char *filename) {
   MYSQL_RES *result = NULL;
   MYSQL_ROW row;
 
-  outfile = m_open(filename,"w");
+  outfile = my_open_file(filename);
 
   if (!outfile) {
     g_critical("Error: DB: %s Could not create output file %s (%d)", database,
@@ -2138,7 +2185,7 @@ void dump_create_database_data(MYSQL *conn, char *database, char *filename) {
   }
   g_free(query);
 
-  m_close(outfile);
+  my_close_file(outfile, filename);
 
   g_string_free(statement, TRUE);
   if (result)
@@ -2988,7 +3035,7 @@ void dump_schema_post_data(MYSQL *conn, struct database *database, char *filenam
   MYSQL_ROW row2;
   gchar **splited_st = NULL;
 
-  outfile = m_open(filename,"w");
+  outfile = my_open_file(filename);
 
   if (!outfile) {
     g_critical("Error: DB: %s Could not create output file %s (%d)", database->name,
@@ -3135,7 +3182,7 @@ void dump_schema_post_data(MYSQL *conn, struct database *database, char *filenam
   }
 
   g_free(query);
-  m_close(outfile);
+  my_close_file(outfile, filename);
 
   g_string_free(statement, TRUE);
   g_strfreev(splited_st);
@@ -3156,7 +3203,7 @@ void dump_triggers_data(MYSQL *conn, char *database, char *table,
   MYSQL_ROW row2;
   gchar **splited_st = NULL;
 
-  outfile = m_open(filename,"w");
+  outfile = my_open_file(filename);
 
   if (!outfile) {
     g_critical("Error: DB: %s Could not create output file %s (%d)", database,
@@ -3208,7 +3255,7 @@ void dump_triggers_data(MYSQL *conn, char *database, char *table,
   }
 
   g_free(query);
-  m_close(outfile);
+  my_close_file(outfile, filename);
 
   g_string_free(statement, TRUE);
   g_strfreev(splited_st);
@@ -3219,13 +3266,16 @@ void dump_triggers_data(MYSQL *conn, char *database, char *table,
 
   return;
 }
+
+
+
 void dump_schema_data(MYSQL *conn, char *database, char *table,
                       char *filename) {
   void *outfile;
   char *query = NULL;
   MYSQL_RES *result = NULL;
   MYSQL_ROW row;
-  outfile = m_open(filename,"w");
+  outfile = my_open_file(filename);
 
   if (!outfile) {
     g_critical("Error: DB: %s Could not create output file %s (%d)", database,
@@ -3282,7 +3332,7 @@ void dump_schema_data(MYSQL *conn, char *database, char *table,
   }
   g_free(query);
 
-  m_close(outfile);
+  my_close_file(outfile, filename);
 
   g_string_free(statement, TRUE);
   if (result)
@@ -3301,8 +3351,8 @@ void dump_view_data(MYSQL *conn, char *database, char *table, char *filename,
 
   mysql_select_db(conn, database);
 
-  outfile = m_open(filename,"w");
-  outfile2 = m_open(filename2,"w");
+  outfile = my_open_file(filename);
+  outfile2 = my_open_file(filename2);
 
   if (!outfile || !outfile2) {
     g_critical("Error: DB: %s Could not create output file (%d)", database,
@@ -3391,8 +3441,8 @@ void dump_view_data(MYSQL *conn, char *database, char *table, char *filename,
     errors++;
   }
   g_free(query);
-  m_close(outfile);
-  m_close(outfile2);
+  my_close_file(outfile, filename);
+  my_close_file(outfile2, filename2);
 
   g_string_free(statement, TRUE);
   if (result)
@@ -3404,7 +3454,7 @@ void dump_view_data(MYSQL *conn, char *database, char *table, char *filename,
 void dump_table_data_file(MYSQL *conn, struct table_job *tj) {
   void *outfile = NULL;
 
-  outfile = m_open(tj->filename,"w");
+  outfile = my_open_file(tj->filename);
 
   if (!outfile) {
     g_critical("Error: DB: %s TABLE: %s Could not create output file %s (%d)",
@@ -3423,7 +3473,7 @@ void dump_table_data_file(MYSQL *conn, struct table_job *tj) {
 void dump_table_checksum(MYSQL *conn, char *database, char *table, char *filename) {
   void *outfile = NULL;
 
-  outfile = m_open(filename, "w");
+  outfile = my_open_file(filename);
 
   if (!outfile) {
     g_critical("Error: DB: %s TABLE: %s Could not create output file %s (%d)",
@@ -3443,7 +3493,7 @@ void dump_table_checksum(MYSQL *conn, char *database, char *table, char *filenam
     g_critical("Could not write schema for %s.%s", database, table);
     errors++;
   }
-  m_close(outfile);
+  my_close_file(outfile, filename);
   g_string_free(statement, TRUE);
 
   return;
@@ -3928,8 +3978,8 @@ guint64 dump_table_data(MYSQL *conn, FILE *file, struct table_job * tj){
               save_checksum(fcfile, checksum);
               fcfile = g_strdup_printf("%s.%05d.sql%s", filename_prefix, fn,
                                        (compress_output ? ".gz" : ""));
-              m_close(file);
-              file = m_open(fcfile,"w");
+              my_close_file(file, fcfile);
+              file = my_open_file(fcfile);
 
               st_in_file = 0;
             }
@@ -4004,7 +4054,7 @@ cleanup:
   }
 
   if (file) {
-    m_close(file);
+    my_close_file(file, fcfile);
   }
 
   save_checksum(fcfile, checksum);
