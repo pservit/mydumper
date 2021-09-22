@@ -533,7 +533,7 @@ void write_snapshot_info(MYSQL *conn, FILE *file) {
 void message_dumping_data(guint thread_id, struct table_job *tj){
   g_message("Thread %d dumping data for `%s`.`%s`%s%s%s%s",
                     thread_id, tj->database, tj->table, 
-		    tj->where ? " WHERE " : "", tj->where ? tj->where : "",
+        tj->where ? " WHERE " : "", tj->where ? tj->where : "",
                     tj->order_by ? " ORDER BY " : "", tj->order_by ? tj->order_by : "");
 }
 
@@ -612,7 +612,7 @@ void *process_queue(struct thread_data *td) {
     if (res)
       mysql_free_result(res);
   }
-	mysql_query(thrconn, set_names_str);
+  mysql_query(thrconn, set_names_str);
 
   g_async_queue_push(conf->ready, GINT_TO_POINTER(1));
 
@@ -844,7 +844,7 @@ void *process_queue_less_locking(struct thread_data *td) {
   if (!skip_tz && mysql_query(thrconn, "/*!40103 SET TIME_ZONE='+00:00' */")) {
     g_critical("Failed to set time zone: %s", mysql_error(thrconn));
   }
-	mysql_query(thrconn, set_names_str);
+  mysql_query(thrconn, set_names_str);
 
   g_async_queue_push(conf->ready_less_locking, GINT_TO_POINTER(1));
 
@@ -1109,17 +1109,17 @@ int main(int argc, char *argv[]) {
       }
     }
   }
-	
+  
   // prompt for password if it's NULL
   if (sizeof(password) == 0 || (password == NULL && askPassword)) {
     password = passwordPrompt();
   }
 
-	 if (set_names_str){
-				gchar *tmp_str=g_strdup_printf("/*!40101 SET NAMES %s*/",set_names_str);
-				set_names_str=tmp_str;
-		} else 
-				set_names_str=g_strdup("/*!40101 SET NAMES binary*/");
+   if (set_names_str){
+        gchar *tmp_str=g_strdup_printf("/*!40101 SET NAMES %s*/",set_names_str);
+        set_names_str=tmp_str;
+    } else 
+        set_names_str=g_strdup("/*!40101 SET NAMES binary*/");
 
   // printf("your password is %s and the size is %d
   // \n",password,sizeof(password));
@@ -1772,7 +1772,7 @@ void start_dump(MYSQL *conn) {
             tval.tm_min, tval.tm_sec);
 
   if (detected_server == SERVER_TYPE_MYSQL) {
-				mysql_query(conn, set_names_str);
+        mysql_query(conn, set_names_str);
 
     write_snapshot_info(conn, mdfile);
   }
@@ -2196,6 +2196,42 @@ gchar *get_primary_key_string(MYSQL *conn, char *database, char *table) {
 /* Heuristic chunks building - based on estimates, produces list of ranges for
    datadumping WORK IN PROGRESS
 */
+
+
+int check_field_type(char *field, MYSQL *conn, char *database, char *table)
+{
+  if(!field) return 0;
+
+  MYSQL_RES *val=NULL;
+
+  gchar *query = g_strdup_printf("SELECT %s %s FROM `%s`.`%s` LIMIT 1", (detected_server == SERVER_TYPE_MYSQL) ? "/*!40001 SQL_NO_CACHE */" : "", field, database, table);
+  mysql_query(conn, query);
+  g_free(query);
+  val=mysql_store_result(conn);
+
+  if (!val) return 0;
+
+  // MYSQL_ROW row = mysql_fetch_row(val);
+  MYSQL_FIELD * fields=mysql_fetch_fields(val);
+
+  int type = fields[0].type;
+  mysql_free_result(val);
+  
+  if( type == MYSQL_TYPE_LONG || type == MYSQL_TYPE_LONGLONG || type == MYSQL_TYPE_INT24) return 1;
+
+  return 0;
+}
+
+guint64 gpow10( int exp )
+{
+  guint64 result = 1;
+  
+  for( int i = 1; i <= exp; ++i ) result *= 10;
+  
+  return result;
+}
+
+
 GList *get_chunks_for_table(MYSQL *conn, char *database, char *table,
                             struct configuration *conf) {
 
@@ -2220,14 +2256,18 @@ GList *get_chunks_for_table(MYSQL *conn, char *database, char *table,
     }
   }
 
+  if(!check_field_type(field, conn, database, table)) field = NULL;
+
   /* If no PK found, try using first UNIQUE index */
   if (!field) {
     mysql_data_seek(indexes, 0);
     while ((row = mysql_fetch_row(indexes))) {
       if (!strcmp(row[1], "0") && (!strcmp(row[3], "1"))) {
         /* Again, first column of any unique index */
-        field = row[4];
-        break;
+        if(check_field_type(row[4], conn, database, table)) {
+          field=row[4];
+          break;
+        }
       }
     }
   }
@@ -2242,7 +2282,7 @@ GList *get_chunks_for_table(MYSQL *conn, char *database, char *table,
       if (!strcmp(row[3], "1")) {
         if (row[6])
           cardinality = strtoul(row[6], NULL, 10);
-        if (cardinality > max_cardinality) {
+        if (cardinality>max_cardinality && check_field_type(row[4], conn, database, table)) {
           field = row[4];
           max_cardinality = cardinality;
         }
@@ -2275,6 +2315,9 @@ GList *get_chunks_for_table(MYSQL *conn, char *database, char *table,
 
   char *min = row[0];
   char *max = row[1];
+  
+  if (!min || !max)
+    goto cleanup;
 
   /* Got total number of rows, skip chunk logic if estimates are low */
   guint64 rows = estimate_count(conn, database, table, field, NULL, NULL);
@@ -2283,7 +2326,7 @@ GList *get_chunks_for_table(MYSQL *conn, char *database, char *table,
 
   /* This is estimate, not to use as guarantee! Every chunk would have eventual
    * adjustments */
-  guint64 estimated_chunks = rows / rows_per_file;
+  // guint64 estimated_chunks = rows / rows_per_file;
   guint64 estimated_step, nmin, nmax, cutoff;
 
   /* Support just bigger INTs for now, very dumb, no verify approach */
@@ -2295,8 +2338,24 @@ GList *get_chunks_for_table(MYSQL *conn, char *database, char *table,
     /* static stepping */
     nmin = strtoul(min, NULL, 10);
     nmax = strtoul(max, NULL, 10);
-    estimated_step = (nmax - nmin) / estimated_chunks + 1;
-    cutoff = nmin;
+    
+    const int MAX_FILES = 100;
+    
+    cutoff         = 0;
+    estimated_step = nmax / MAX_FILES;
+    
+    if(estimated_step > 50000) {
+      estimated_step = 100000;
+    } else {
+      estimated_step = 10000;
+    }
+    
+    if( nmax / estimated_step > 5000 ) {
+      estimated_step = gpow10( (int)floor(log10(nmax)) - 3 );
+    }
+
+    g_message("Table %s.%s: rows=%llu, nmin=%llu, nmax=%llu, cutoff=%llu, step=%llu", database, table, (unsigned long long)rows, (unsigned long long)nmin, (unsigned long long)nmax, (unsigned long long)cutoff, (unsigned long long)estimated_step);
+
     while (cutoff <= nmax) {
       chunks = g_list_prepend(
           chunks,
@@ -3076,7 +3135,7 @@ void dump_schema_data(MYSQL *conn, char *database, char *table,
   GString *statement = g_string_sized_new(statement_size);
 
   if (detected_server == SERVER_TYPE_MYSQL) {
-				g_string_printf(statement,"%s;\n",set_names_str);
+        g_string_printf(statement,"%s;\n",set_names_str);
     g_string_append(statement, "/*!40014 SET FOREIGN_KEY_CHECKS=0*/;\n\n");
     if (!skip_tz) {
       g_string_append(statement, "/*!40103 SET TIME_ZONE='+00:00' */;\n");
@@ -3159,7 +3218,7 @@ void dump_view_data(MYSQL *conn, char *database, char *table, char *filename,
   }
 
   if (detected_server == SERVER_TYPE_MYSQL) {
-				g_string_printf(statement,"%s;\n",set_names_str);
+        g_string_printf(statement,"%s;\n",set_names_str);
   }
 
   if (!write_data((FILE *)outfile, statement)) {
@@ -3631,7 +3690,7 @@ guint64 dump_table_data(MYSQL *conn, FILE *file, char *database, char *table,
     if (!statement->len) {
       if (!st_in_file) {
         if (detected_server == SERVER_TYPE_MYSQL) {
-										g_string_printf(statement,"%s;\n",set_names_str);
+                    g_string_printf(statement,"%s;\n",set_names_str);
           g_string_append(statement, "/*!40014 SET FOREIGN_KEY_CHECKS=0*/;\n");
           if (!skip_tz) {
             g_string_append(statement, "/*!40103 SET TIME_ZONE='+00:00' */;\n");
