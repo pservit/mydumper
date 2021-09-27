@@ -1963,6 +1963,25 @@ void start_dump(MYSQL *conn) {
 
   g_list_free(no_updated_tables);
 
+
+  {
+    GList *iter;
+    for (iter = innodb_tables; iter != NULL; iter = iter->next) {
+      dbt = (struct db_table *)iter->data;
+      g_message("innodb_tables: %s", dbt->table);
+    }
+  }
+
+  {
+    GList *iter;
+    for (iter = non_innodb_table; iter != NULL; iter = iter->next) {
+      dbt = (struct db_table *)iter->data;
+      g_message("non_innodb_tables: %s", dbt->table);
+    }
+  }
+
+
+
   if (!non_innodb_table) {
     g_async_queue_push(conf.unlock_tables, GINT_TO_POINTER(1));
   }
