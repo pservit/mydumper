@@ -1913,6 +1913,7 @@ void start_dump(MYSQL *conn) {
   conf.ready = g_async_queue_new();
   conf.unlock_tables = g_async_queue_new();
   conf.ready_database_dump = g_async_queue_new();
+  conf.use_any_index = 1;
 
   for (n = 0; n < num_threads; n++) {
     td[n].conf = &conf;
