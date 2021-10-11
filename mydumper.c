@@ -2415,10 +2415,15 @@ GList *get_chunks_for_table(MYSQL *conn, char *database, char *table,
         }
       }
     }
+
+    g_message("Use any index %d", conf->use_any_index ? 1 : 0);
+
     /* Still unlucky? Pick any high-cardinality index */
     if (!field && conf->use_any_index) {
       guint64 max_cardinality = 0;
       guint64 cardinality = 0;
+
+      g_message("Table %s.%s: searching max cardinality field", database, table);
 
       mysql_data_seek(indexes, 0);
       while ((row = mysql_fetch_row(indexes))) {
@@ -2428,6 +2433,8 @@ GList *get_chunks_for_table(MYSQL *conn, char *database, char *table,
           if (cardinality > max_cardinality && check_field_type(row[4], conn, database, table)) {
             field = row[4];
             max_cardinality = cardinality;
+
+            g_message("Table %s.%s: field %s, cardinality: %lu", database, table, field, max_cardinality);
           }
         }
       }
