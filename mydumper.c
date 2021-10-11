@@ -2416,7 +2416,7 @@ GList *get_chunks_for_table(MYSQL *conn, char *database, char *table,
       }
     }
 
-    g_message("Use any index %d", conf->use_any_index ? 1 : 0);
+    g_message("Use any index %d, field: %s", conf->use_any_index ? 1 : 0, field);
 
     /* Still unlucky? Pick any high-cardinality index */
     if (!field && conf->use_any_index) {
