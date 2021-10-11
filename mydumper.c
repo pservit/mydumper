@@ -2397,7 +2397,7 @@ GList *get_chunks_for_table(MYSQL *conn, char *database, char *table,
 
   if (indexes){
     while ((row = mysql_fetch_row(indexes))) {
-      if (!strcmp(row[2], "PRIMARY") && (!strcmp(row[3], "1"))) {
+      if (!strcmp(row[2], "PRIMARY") && (!strcmp(row[3], "1")) && check_field_type(row[4], conn, database, table)) {
         /* Pick first column in PK, cardinality doesn't matter */
         field = row[4];
         break;
