@@ -4239,9 +4239,6 @@ gboolean write_data_cs(FILE* file,GString * data, GChecksum *checksum) {
   size_t written = 0;
   ssize_t r = 0;
 
-  g_message("write_data_cs %d %lu", fileno(file), data->len);
-
-
   while (written < data->len) {
     r=m_write(file, data->str + written, data->len);
     if (r < 0) {
