@@ -53,6 +53,10 @@ struct configuration {
 struct thread_data {
   struct configuration *conf;
   guint thread_id;
+  MYSQL *thrconn;
+  GAsyncQueue *queue;
+  GAsyncQueue *ready;
+  gboolean less_locking_stage;
 };
 
 struct job {
@@ -67,6 +71,7 @@ struct job {
 struct table_job {
   char *database;
   char *table;
+  char *partition;
   guint nchunk;
   char *filename;
   char *where;

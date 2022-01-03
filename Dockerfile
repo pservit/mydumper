@@ -1,24 +1,34 @@
-FROM ubuntu:20.04
+FROM gcc
+FROM ubuntu:latest
 
-RUN true \
-	&& apt update -y \
-	&& DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends \
-		build-essential \
-		cmake \
-		mysql-client \
-		default-libmysqlclient-dev \
-		default-mysql-client \
-		pkg-config \
-		libglib2.0-dev \
-		zlib1g-dev \
-		libpcre3-dev \
-		libssl-dev \
-	&& rm -rf /var/lib/apt/lists/*
+RUN \
+  apt-get update && \
+  DEBIAN_FRONTEND=noninteractive \
+    apt-get install -y lsb-release curl gnupg2 \
+  && \
+  apt-get clean && \
+  rm -rf /var/lib/apt/lists/
 
+RUN \
+  curl --fail --location --show-error --silent --output /tmp/percona-release.deb \
+    https://repo.percona.com/apt/percona-release_latest.$(lsb_release -sc)_all.deb \
+  && \
+  dpkg -i /tmp/percona-release.deb && \
+  rm -v /tmp/percona-release.deb
 
+RUN \
+  apt-get update && \
+  DEBIAN_FRONTEND=noninteractive \
+    apt-get install -y \
+      libglib2.0-dev zlib1g-dev libpcre3-dev libssl-dev cmake g++ libperconaserverclient20-dev libperconaserverclient20 \
+  && \
+  apt-get clean && \
+  rm -rf /var/lib/apt/lists/
 
-COPY . /src/
+COPY . /usr/src/
+WORKDIR /usr/src/
 
-WORKDIR /src/
-
-RUN mkdir build && cd build && cmake .. && make install
+RUN \
+  cmake . && \
+  make && \
+  make install

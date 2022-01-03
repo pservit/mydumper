@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.6)
 project(mydumper)
-set(VERSION 0.11.2)
+set(VERSION 0.11.5)
 set(ARCHIVE_NAME "${CMAKE_PROJECT_NAME}-${VERSION}")
 
 #Required packages
@@ -9,6 +9,13 @@ find_package(MySQL)
 find_package(ZLIB)
 find_package(GLIB2)
 find_package(PCRE)
+find_package(OpenSSL)
+
+if (NOT OpenSSL_FOUND)
+  option(WITH_SSL FALSE)
+  string(REPLACE "MYSQL_LIBRARIES_ssl-NOTFOUND"    "" MYSQL_LIBRARIES "${MYSQL_LIBRARIES}")
+  string(REPLACE "MYSQL_LIBRARIES_crypto-NOTFOUND" "" MYSQL_LIBRARIES "${MYSQL_LIBRARIES}")
+endif (NOT OpenSSL_FOUND)
 
 option(BUILD_DOCS "Build the documentation" ON)
 
@@ -46,7 +53,7 @@ else (WITH_BINLOG)
 endif (WITH_BINLOG)
 target_link_libraries(mydumper ${MYSQL_LIBRARIES} ${GLIB2_LIBRARIES} ${GTHREAD2_LIBRARIES} ${GIO2_LIBRARIES} ${GOBJECT2_LIBRARIES} ${PCRE_PCRE_LIBRARY} ${ZLIB_LIBRARIES} ${ZSTD_LIBRARIES} stdc++ m )
 
-add_executable(myloader myloader.c connection.c getPassword.c logging.c set_verbose.c common.c zstd/zstd_zlibwrapper.c zstd/gzclose.c zstd/gzlib.c zstd/gzread.c zstd/gzwrite.c)
+add_executable(myloader myloader.c server_detect.c connection.c getPassword.c logging.c set_verbose.c common.c zstd/zstd_zlibwrapper.c zstd/gzclose.c zstd/gzlib.c zstd/gzread.c zstd/gzwrite.c)
 target_link_libraries(myloader ${MYSQL_LIBRARIES} ${GLIB2_LIBRARIES} ${GTHREAD2_LIBRARIES} ${PCRE_PCRE_LIBRARY} ${ZLIB_LIBRARIES} ${ZSTD_LIBRARIES} stdc++)
 
 else (WITH_ZSTD)
@@ -57,7 +64,7 @@ else (WITH_BINLOG)
 endif (WITH_BINLOG)
 target_link_libraries(mydumper ${MYSQL_LIBRARIES} ${GLIB2_LIBRARIES} ${GTHREAD2_LIBRARIES} ${GIO2_LIBRARIES} ${GOBJECT2_LIBRARIES} ${PCRE_PCRE_LIBRARY} ${ZLIB_LIBRARIES} stdc++ m )
 
-add_executable(myloader myloader.c connection.c getPassword.c logging.c set_verbose.c common.c)
+add_executable(myloader myloader.c server_detect.c connection.c getPassword.c logging.c set_verbose.c common.c)
 target_link_libraries(myloader ${MYSQL_LIBRARIES} ${GLIB2_LIBRARIES} ${GTHREAD2_LIBRARIES} ${PCRE_PCRE_LIBRARY} ${ZLIB_LIBRARIES} stdc++)
 endif (WITH_ZSTD)
 
@@ -87,6 +94,8 @@ MESSAGE(STATUS "CMAKE_INSTALL_PREFIX = ${CMAKE_INSTALL_PREFIX}")
 MESSAGE(STATUS "BUILD_DOCS = ${BUILD_DOCS}")
 MESSAGE(STATUS "WITH_BINLOG = ${WITH_BINLOG}")
 MESSAGE(STATUS "WITH_ZSTD = ${WITH_ZSTD}")
+MESSAGE(STATUS "OpenSSL_FOUND = ${OpenSSL_FOUND}")
+MESSAGE(STATUS "WITH_SSL = ${WITH_SSL}")
 MESSAGE(STATUS "RUN_CPPCHECK = ${RUN_CPPCHECK}")
 MESSAGE(STATUS "Change a values with: cmake -D<Variable>=<Value>")
 MESSAGE(STATUS "------------------------------------------------")
