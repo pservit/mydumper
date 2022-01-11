@@ -3995,7 +3995,6 @@ guint64 dump_table_data(MYSQL *conn, FILE *file, struct table_job * tj){
     num_rows++;
 
     if (!statement->len) {
-	    
       // A file can be chunked by amount of rows or file size. 
       //
       if (!st_in_file) { 
@@ -4059,6 +4058,7 @@ guint64 dump_table_data(MYSQL *conn, FILE *file, struct table_job * tj){
         }
       }else{
         append_insert ((complete_insert || has_generated_fields), statement, tj->table, fields, num_fields);
+        g_string_append(statement,"\n");
       }
       num_rows_st = 0;
     }
@@ -4108,7 +4108,8 @@ guint64 dump_table_data(MYSQL *conn, FILE *file, struct table_job * tj){
       if (i < num_fields - 1) {
         g_string_append(statement_row, fields_terminated_by);
       } else {
-        g_string_append_printf(statement_row,"%s", lines_terminated_by);
+        // g_string_append_printf(statement_row,"%s", lines_terminated_by);
+        g_string_append_printf(statement_row, ")");
 
         /* INSERT statement is closed before over limit */
         if (statement->len + statement_row->len + 1 > statement_size) {
@@ -4142,7 +4143,7 @@ guint64 dump_table_data(MYSQL *conn, FILE *file, struct table_job * tj){
           g_string_set_size(statement, 0);
         } else {
           if (num_rows_st && ! load_data)
-            g_string_append_c(statement, ',');
+            g_string_append(statement, ",\n");
           g_string_append(statement, statement_row->str);
           num_rows_st++;
           g_string_set_size(statement_row, 0);
